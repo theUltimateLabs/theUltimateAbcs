@@ -1,0 +1,137 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" >
+
+
+
+    
+    <TextView
+        android:id="@+id/wordLetter0"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toLeftOf="@+id/wordLetter1"
+        android:text="x"
+        android:textSize="100dp" />
+    
+    
+    <TextView
+        android:id="@+id/wordLetter1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toLeftOf="@+id/wordLetter2"
+        android:text="x"
+        android:textSize="100dp" />    
+
+    <TextView
+        android:id="@+id/wordLetter2"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toLeftOf="@+id/wordLetter3"
+        android:text="x"
+        android:textSize="100dp" />
+ 
+    <TextView
+        android:id="@+id/wordLetter3"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toLeftOf="@+id/wordLetter4"
+        android:text="x"
+        android:textSize="100dp" />
+
+    <TextView
+        android:id="@+id/wordLetter4"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_centerHorizontal="true"
+        android:text="x"
+        android:textSize="100dp" />
+
+    <TextView
+        android:id="@+id/wordLetter5"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toRightOf="@+id/wordLetter4"
+        android:text="x"
+        android:textSize="100dp" />
+    
+    <TextView
+        android:id="@+id/wordLetter6"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toRightOf="@+id/wordLetter5"
+        android:text="x"
+        android:textSize="100dp" />   
+        
+    <TextView
+        android:id="@+id/wordLetter7"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toRightOf="@+id/wordLetter6"
+        android:text="x"
+        android:textSize="100dp" />
+    
+    <TextView
+        android:id="@+id/wordLetter8"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/wordImageView"
+        android:layout_toRightOf="@+id/wordLetter7"
+        android:text="x"
+        android:textSize="100dp" />
+
+    <ImageView
+        android:id="@+id/wordImageView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/bigLetter"
+        android:layout_centerHorizontal="true"
+        android:adjustViewBounds="true"
+        android:maxHeight="400dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_launcher" />
+
+    <ImageView
+        android:id="@+id/dummyImage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="24dp"
+        android:src="@drawable/ic_action_search" />
+
+    <TextView
+        android:id="@+id/littleLetter"
+        android:layout_width="wrap_content"
+        android:layout_height="300dp"
+        android:layout_alignParentTop="true"
+        android:layout_toRightOf="@+id/center"
+        android:padding="0dp"
+        android:text="a"
+        android:textSize="250dp" />
+
+    <TextView
+        android:id="@+id/bigLetter"
+        android:layout_width="wrap_content"
+        android:layout_height="300dp"
+        android:layout_alignParentTop="true"
+        android:layout_toLeftOf="@+id/center"
+        android:padding="0dp"
+        android:text="A"
+        android:textSize="250dp" />
+    
+    <TextView
+        android:id="@+id/center"
+        android:layout_width="10dp"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:layout_centerHorizontal="true"
+        android:text=""/>
+
+</RelativeLayout>

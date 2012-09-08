@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<resources>
+    <array name="A">
+        <item>apple</item>
+        <item>ant</item>
+        <item>android</item>
+    </array>
+    <array name="B">
+        <item>bee</item>
+        <item>bridge</item>
+        <item>baby</item>
+        <item>bat</item>
+        <item>ball</item>
+        <item>box</item>
+        <item>blue</item>
+        <item>babies</item>
+		<item>back</item>
+		<item>bag</item>
+		<item>balloon</item>
+		<item>balls</item>
+		<item>banana</item>
+		<item>basket</item>
+		<item>bean</item>
+		<item>bear</item>
+		<item>bears</item>
+		<item>bed</item>
+		<item>bedroom</item>
+		<item>beds</item>
+		<item>bee</item>
+		<item>beetle</item>
+		<item>bell</item>
+		<item>bells</item>
+		<item>berry</item>
+		<item>bike</item>
+		<item>bird</item>
+		<item>birthday</item>
+		<item>boat</item>
+		<item>body</item>
+		<item>bone</item>
+		<item>book</item>
+		<item>boot</item>
+		<item>boy</item>
+		<item>boys</item>
+		<item>brain</item>
+		<item>breakfast</item>
+		<item>brick</item>
+		<item>brother</item>
+		<item>brothers</item>
+		<item>bubble</item>
+		<item>bucket</item>
+		<item>building</item>
+		<item>butter</item>
+		<item>button</item>
+    </array>
+</resources>
