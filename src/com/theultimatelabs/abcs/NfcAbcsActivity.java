@@ -25,10 +25,11 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import com.theultimatelabs.nfcblanket.R;
-
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.IntentFilter.MalformedMimeTypeException;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Bitmap;
@@ -39,6 +40,7 @@ import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
+import android.nfc.tech.NdefFormatable;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -51,27 +53,20 @@ import android.view.View.OnClickListener;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.theultimatelabs.nfcblanket.R;
+
 public class NfcAbcsActivity extends Activity implements OnInitListener {
 
 	public final static String TAG = NfcAbcsActivity.class.getName();
 	private TextToSpeech mTts;
 	private Character mLetter = null;
 	private String mWord = null;
-	final private int WordResources[] = { R.raw.a, R.raw.b, R.raw.c, R.raw.d };
 
 	@Override
 	public void onNewIntent(Intent intent) {
 		Log.v(TAG, "New Intent:" + intent.getAction());
 	}
 
-	private void sleep(long milliseconds) {
-		try {
-			Thread.sleep(milliseconds);
-		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-	}
 
 	private String getWord(Character letter) {
 		Resources res = getResources();
@@ -106,6 +101,10 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			R.id.wordLetter2, R.id.wordLetter3, R.id.wordLetter4,
 			R.id.wordLetter5, R.id.wordLetter6, R.id.wordLetter7,
 			R.id.wordLetter8 };
+	private NfcAdapter mAdapter;
+	private PendingIntent mPendingIntent;
+	private IntentFilter[] mFilters;
+	private String[][] mTechLists;
 
 	/*
 	 * TextView [] mWordLetters = { (TextView)findViewById(R.id.wordLetter0),
@@ -125,78 +124,108 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			Log.v(TAG, findViewById(id).getClass().getName());
 			Log.v(TAG, new Integer(id).toString());
 			((TextView) findViewById(id)).setText("");
+			((TextView) findViewById(id)).setTextColor(Color.BLACK);
+			((TextView) findViewById(id)).setClickable(false);
 		}
 	}
 
-	private void showWord(String word) {
+	private void showWord(final String word) {
 		Log.v(TAG, word);
 		clearWord();
 		char[] cWord = word.toCharArray();
 		for (int i = 0; i < word.length(); i++) {
-			((TextView) findViewById(wordLetterIds[4 - word.length() / 2 + i]))
-					.setText(word.substring(i, i + 1));
+			TextView letterView = ((TextView) findViewById(wordLetterIds[4 - word.length() / 2 + i]));
+			letterView.setText(word.substring(i, i + 1));
+			letterView.setOnClickListener(new OnClickListener() {
+				public void onClick(View arg0) {
+					mTts.speak(word,TextToSpeech.QUEUE_FLUSH, null);
+				}
+				
+			});
 		}
 	}
 
-	private void highlightLetter(int off, int on) {
-		((TextView) findViewById(wordLetterIds[4 - mWord.length() / 2 + off]))
-				.setTextColor(Color.BLACK);
-		((TextView) findViewById(wordLetterIds[4 - mWord.length() / 2 + on]))
-				.setTextColor(Color.RED);
-	}
-
-	private void presentLetter() {
+	private void presentLetter(boolean newLetter) {
 
 		Log.v(TAG, "Present letter");
+		
 		mWord = getWord(mLetter);
-
-		((TextView) (this.findViewById(R.id.bigLetter))).setText(mLetter
-				.toString().toUpperCase());
-		((TextView) (this.findViewById(R.id.bigLetter)))
-				.setOnClickListener(new OnClickListener() {
-					public void onClick(View arg0) {
-						mTts.speak("big " + mLetter.toString(),
-								TextToSpeech.QUEUE_FLUSH, null);
-					}
-				});
-		((TextView) (this.findViewById(R.id.littleLetter))).setText(mLetter
-				.toString().toLowerCase());
-		((TextView) (this.findViewById(R.id.littleLetter)))
-				.setOnClickListener(new OnClickListener() {
-					public void onClick(View arg0) {
-						mTts.speak("little " + mLetter.toString(),
-								TextToSpeech.QUEUE_FLUSH, null);
-					}
-				});
 		showWord(mWord);
-
-		/*
-		 * ((TextView)(this.findViewById(R.id.wordTextView))).setOnClickListener(
-		 * new OnClickListener() { public void onClick(View arg0) {
-		 * mTts.speak(String.format("%s is spelled",mWord),
-		 * TextToSpeech.QUEUE_FLUSH, null); for (int i=0; i<mWord.length(); i++)
-		 * { mTts.speak(mWord.substring(i, i+1), TextToSpeech.QUEUE_ADD, null);
-		 * } } });
-		 */
-
-		new RetriveImage().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,
-				mWord);
-
-		mTts.speak(String.format("big %c little %c, you found the letter %c",
-				mLetter, mLetter, mLetter, mLetter), TextToSpeech.QUEUE_FLUSH,
-				null);
-		mTts.playSilence(100, TextToSpeech.QUEUE_ADD, null);
-		mTts.speak(String.format("What starts with %c?", mLetter),
-				TextToSpeech.QUEUE_ADD, null);
-		mTts.playSilence(400, TextToSpeech.QUEUE_ADD, null);
-		mTts.speak(String.format("%s starts with %c!", mWord, mLetter),
-				TextToSpeech.QUEUE_ADD, null);
-		mTts.speak(String.format("%s is spelled", mWord),
-				TextToSpeech.QUEUE_ADD, null);
+		
+		new RetriveImage().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,mWord);
+			if(newLetter) {
+			((TextView) (this.findViewById(R.id.bigLetter))).setText(mLetter
+					.toString().toUpperCase());
+			((TextView) (this.findViewById(R.id.bigLetter)))
+					.setOnClickListener(new OnClickListener() {
+						public void onClick(View arg0) {
+							mTts.speak("big " + mLetter.toString(),
+									TextToSpeech.QUEUE_FLUSH, null);
+						}
+					});
+			((TextView) (this.findViewById(R.id.littleLetter))).setText(mLetter
+					.toString().toLowerCase());
+			((TextView) (this.findViewById(R.id.littleLetter)))
+					.setOnClickListener(new OnClickListener() {
+						public void onClick(View arg0) {
+							mTts.speak("little " + mLetter.toString(),
+									TextToSpeech.QUEUE_FLUSH, null);
+						}
+					});
+			new SayLetter().execute(mLetter);
+		}
 		new SpellWord().execute(mWord);
-		// new
-		// SpellWord().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,mWord);
-		//
+
+	}
+	
+	private class SayLetter extends AsyncTask<Character, Integer, Void> {
+
+		@Override
+		protected Void doInBackground(Character... letters) {
+			Character letter = letters[0];
+			
+			((TextView) findViewById(R.id.bigLetter)).setTextColor(Color.BLACK);
+			((TextView) findViewById(R.id.littleLetter)).setTextColor(Color.BLACK);
+			
+			mTts.playSilence(1000, TextToSpeech.QUEUE_ADD, null);
+			while (mTts.isSpeaking());
+			
+			publishProgress(R.id.bigLetter,0);
+			mTts.speak(String.format("Big %c!", letter), TextToSpeech.QUEUE_FLUSH, null);
+			while (mTts.isSpeaking());
+			//publishProgress(R.id.bigLetter,Color.BLACK);
+			
+			publishProgress(R.id.littleLetter,0);
+			mTts.speak(String.format("Little %c!", letter), TextToSpeech.QUEUE_FLUSH, null);
+			while (mTts.isSpeaking());
+			//publishProgress(R.id.littleLetter,Color.BLACK);
+			
+			//publishProgress(R.id.littleLetter,0);
+			//publishProgress(R.id.bigLetter,0);
+			mTts.speak(String.format("You found the letter %c!", letter), TextToSpeech.QUEUE_FLUSH, null);
+			while (mTts.isSpeaking());
+			//publishProgress(R.id.littleLetter,Color.BLACK);
+			//publishProgress(R.id.bigLetter,Color.BLACK);
+			
+			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
+			mTts.speak(String.format("What starts with %c?", letter),
+					TextToSpeech.QUEUE_ADD, null);
+			
+			return null;
+		}
+
+		protected void onProgressUpdate(Integer... args) {
+			int view = args[0];
+			int color = args[1];
+			if (color == 0) {
+				color = 0xff000000 | new Random().nextInt();
+			}
+			((TextView) findViewById(view)).setTextColor(color);
+		}
+
+		protected void onPostExecute(Void v) {
+			
+		}
 
 	}
 
@@ -205,16 +234,25 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		@Override
 		protected Void doInBackground(String... words) {
 			String word = words[0];
-			while (mTts.isSpeaking())
-				;
-			for (int i = 0; i < mWord.length(); i++) {
-				this.publishProgress(i, Color.RED);
-				mTts.speak(mWord.substring(i, i + 1), TextToSpeech.QUEUE_ADD,
+			Character c = word.toCharArray()[0];
+			
+			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
+			mTts.speak(String.format("%s starts with %c!", word, c),
+					TextToSpeech.QUEUE_ADD, null);
+			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
+			mTts.speak(String.format("%s is spelled", word),
+					TextToSpeech.QUEUE_ADD, null);
+		
+			while (mTts.isSpeaking());
+			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
+			for (int i = 0; i < word.length(); i++) {
+				this.publishProgress(i, 0);
+				mTts.speak(word.substring(i, i + 1), TextToSpeech.QUEUE_ADD,
 						null);
-				mTts.playSilence(400, TextToSpeech.QUEUE_ADD, null);
+				mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
 				while (mTts.isSpeaking())
 					;
-				this.publishProgress(i, Color.BLACK);
+				//publishProgress(i, Color.BLACK);
 			}
 			return null;
 		}
@@ -222,13 +260,16 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		protected void onProgressUpdate(Integer... args) {
 			int index = args[0];
 			int color = args[1];
+			if (color == 0) {
+				color = 0xff000000 | new Random().nextInt();
+			}
 			((TextView) findViewById(wordLetterIds[4 - mWord.length() / 2
 					+ index])).setTextColor(color);
 		}
 
 		protected void onPostExecute(Void v) {
 			new VoiceCapture().execute(mWord);
-			mTts.speak(String.format("Logan can you say %s", mWord),
+			mTts.speak(String.format("Logan can you say %s?", mWord),
 					TextToSpeech.QUEUE_ADD, null);
 		}
 
@@ -239,7 +280,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		@Override
 		protected Void doInBackground(String... words) {
 			String word = words[0];
-			Intent recognizeIntent = getRecognizeIntent(word);
+			Intent recognizeIntent = buildRecognizeIntent(word);
 			while (mTts.isSpeaking())
 				;
 			startActivityForResult(recognizeIntent, mLetter);
@@ -251,7 +292,32 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
+		
+		 mAdapter = NfcAdapter.getDefaultAdapter(this);
 
+        // Create a generic PendingIntent that will be deliver to this activity. The NFC stack
+        // will fill in the intent with the details of the discovered tag before delivering to
+        // this activity.
+        mPendingIntent = PendingIntent.getActivity(this, 0,
+                new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
+
+        // Setup an intent filter for all MIME based dispatches
+        IntentFilter ndef = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
+        IntentFilter tech = new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED);
+        try {
+            ndef.addDataType("*/*");
+        } catch (MalformedMimeTypeException e) {
+            throw new RuntimeException("fail", e);
+        }
+        
+        mFilters = new IntentFilter[] {
+                ndef,tech
+        };
+
+        // Setup a tech list for all NfcF tags
+        mTechLists = new String[][] { new String[] { NdefFormatable.class.getName() } };
+
+        
 		Log.v(TAG, this.getIntent().getAction());
 		if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(getIntent().getAction())) {
 
@@ -264,8 +330,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 				if (records != null && records[0].getPayload() != null) {
 					mLetter = new Character((char) records[0].getPayload()[0]);
 					Log.v(TAG, mLetter.toString());
-					mTts = new TextToSpeech(this, this);
-					// mTts.setPitch(1.0f);
+					
 				} else {
 					Log.e(TAG, "ERROR: missing record");
 				}
@@ -275,8 +340,10 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		} else {
 			mLetter = 'B';
 			Log.v(TAG, mLetter.toString());
-			mTts = new TextToSpeech(this, this);
 		}
+		
+		mTts = new TextToSpeech(this, this);
+        // mTts.setPitch(1.0f);
 
 	}
 
@@ -303,11 +370,18 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			Log.e(TAG, "ERROR: Could not initialize TextToSpeech!");
 		}
 
-		presentLetter();
+		if (mLetter != null) presentLetter(true);
 
 	}
-
-	public Intent getRecognizeIntent(String word)// , int maxResultsToReturn)
+  
+	@Override
+    public void onResume() {
+        super.onResume();
+        if (mAdapter != null) mAdapter.enableForegroundDispatch(this, mPendingIntent, mFilters,
+                mTechLists);
+    }
+    
+	public Intent buildRecognizeIntent(String word)// , int maxResultsToReturn)
 	{
 		Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
 		intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -356,18 +430,6 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 
 		// startActivity(new Intent(Intent.ACTION_VIEW,
 		// Uri.parse("http://www.youtube.com/watch?v=2qBgMmRMpOo")));
-	}
-
-	class DescribeLetter extends AsyncTask<String, Void, Void> {
-		protected Void doInBackground(String... words) {
-			Log.v(TAG, "descibe letter");
-			String word = words[0];
-			mTts.speak("hello", TextToSpeech.QUEUE_FLUSH, null);
-			mTts.speak(mLetter.toString(), TextToSpeech.QUEUE_FLUSH, null);
-			mTts.speak(String.format("%s starts with %c", word, mLetter),
-					TextToSpeech.QUEUE_ADD, null);
-			return null;
-		}
 	}
 
 	class RetriveImage extends AsyncTask<String, Void, Bitmap> {
@@ -461,7 +523,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			wordImage.setImageBitmap(bitmap);
 			wordImage.setOnClickListener(new OnClickListener() {
 				public void onClick(View v) {
-					presentLetter();
+					presentLetter(false);
 				}
 			});
 		}
@@ -561,5 +623,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl)));
 		}
 	}
+	
+
 
 }
