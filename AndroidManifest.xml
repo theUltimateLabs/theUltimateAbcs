@@ -19,8 +19,9 @@
         
         <activity
             android:name="com.theultimatelabs.abcs.NfcAbcsActivity"
-            android:label="@string/title_activity_main" 
-            
+            android:label="theUltimateAbcs" 
+
+           
             android:screenOrientation="portrait">
             
             <intent-filter>

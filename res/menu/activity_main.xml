@@ -4,4 +4,8 @@
         android:title="Write Mode"
         android:orderInCategory="100"
         android:showAsAction="ifRoom" />
+    <item android:id="@+id/menu_name"
+        android:title="Child's Name"
+        android:orderInCategory="100"
+        android:showAsAction="ifRoom" />
 </menu>

@@ -25,8 +25,11 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import android.app.ActionBar;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.PendingIntent;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.IntentFilter.MalformedMimeTypeException;
@@ -47,10 +50,17 @@ import android.os.Parcelable;
 import android.speech.RecognizerIntent;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.TextToSpeech.OnInitListener;
+import android.text.Editable;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
+import android.view.WindowManager;
+import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import com.theultimatelabs.nfcblanket.R;
@@ -58,13 +68,51 @@ import com.theultimatelabs.nfcblanket.R;
 public class NfcAbcsActivity extends Activity implements OnInitListener {
 
 	public final static String TAG = NfcAbcsActivity.class.getName();
+	protected static final String CHILD_NAME_ENTRY = "CHILD_NAME";
+	protected static final String APP_PREFS = "APP_PREFS";
 	private TextToSpeech mTts;
 	private Character mLetter = null;
 	private String mWord = null;
+	int[] wordLetterIds = { R.id.wordLetter0, R.id.wordLetter1,
+			R.id.wordLetter2, R.id.wordLetter3, R.id.wordLetter4,
+			R.id.wordLetter5, R.id.wordLetter6, R.id.wordLetter7,
+			R.id.wordLetter8 };
+	private NfcAdapter mAdapter;
+	private PendingIntent mPendingIntent;
+	private IntentFilter[] mFilters;
+	private String[][] mTechLists;
+	private String mChildName = "Logan";
+	
 
 	@Override
 	public void onNewIntent(Intent intent) {
 		Log.v(TAG, "New Intent:" + intent.getAction());
+		if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(intent.getAction())) {
+			Tag tag = (Tag) intent.getExtras().get(NfcAdapter.EXTRA_TAG);
+			Parcelable[] rawMsgs = intent.getParcelableArrayExtra(
+					NfcAdapter.EXTRA_NDEF_MESSAGES);
+			Log.v(TAG,"Decoding TAG");
+			if (rawMsgs != null) {
+				NdefRecord[] records = ((NdefMessage) rawMsgs[0]).getRecords();
+				Log.v(TAG, new String(records[0].getPayload()));
+				if (records != null && records[0].getPayload() != null) {
+					//TODO make sure it has my package name also
+					mLetter = new Character((char) records[0].getPayload()[0]);
+					Log.v(TAG, mLetter.toString());
+					presentLetter(true);					
+				} else {
+					Log.e(TAG, "ERROR: missing record");
+				}
+			} else {
+				Log.e(TAG, "ERROR: missing ndef messages");
+			}
+		}
+		else if (NfcAdapter.ACTION_TECH_DISCOVERED.equals(getIntent().getAction())) {
+			Log.v(TAG,"offer to write tag here");
+		}
+		else {
+			Log.v(TAG,String.format("Unknown TAG type, expecting %s",NfcAdapter.ACTION_NDEF_DISCOVERED));
+		}
 	}
 
 
@@ -96,27 +144,6 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		 */
 
 	}
-
-	int[] wordLetterIds = { R.id.wordLetter0, R.id.wordLetter1,
-			R.id.wordLetter2, R.id.wordLetter3, R.id.wordLetter4,
-			R.id.wordLetter5, R.id.wordLetter6, R.id.wordLetter7,
-			R.id.wordLetter8 };
-	private NfcAdapter mAdapter;
-	private PendingIntent mPendingIntent;
-	private IntentFilter[] mFilters;
-	private String[][] mTechLists;
-
-	/*
-	 * TextView [] mWordLetters = { (TextView)findViewById(R.id.wordLetter0),
-	 * (TextView)findViewById(R.id.wordLetter1),
-	 * (TextView)findViewById(R.id.wordLetter2),
-	 * (TextView)findViewById(R.id.wordLetter3),
-	 * (TextView)findViewById(R.id.wordLetter4),
-	 * (TextView)findViewById(R.id.wordLetter5),
-	 * (TextView)findViewById(R.id.wordLetter6),
-	 * (TextView)findViewById(R.id.wordLetter7),
-	 * (TextView)findViewById(R.id.wordLetter8)};
-	 */
 
 	private void clearWord() {
 		Log.v(TAG, String.format("imageview id: %d", R.id.wordImageView));
@@ -151,7 +178,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		
 		mWord = getWord(mLetter);
 		showWord(mWord);
-		
+		((ImageView) findViewById(R.id.wordImageView)).setClickable(false);
 		new RetriveImage().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,mWord);
 			if(newLetter) {
 			((TextView) (this.findViewById(R.id.bigLetter))).setText(mLetter
@@ -210,6 +237,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
 			mTts.speak(String.format("What starts with %c?", letter),
 					TextToSpeech.QUEUE_ADD, null);
+			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
 			
 			return null;
 		}
@@ -269,8 +297,9 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 
 		protected void onPostExecute(Void v) {
 			new VoiceCapture().execute(mWord);
-			mTts.speak(String.format("Logan can you say %s?", mWord),
+			mTts.speak(String.format("%s can you say %s?",mChildName,mWord),
 					TextToSpeech.QUEUE_ADD, null);
+			((ImageView) findViewById(R.id.wordImageView)).setClickable(true);
 		}
 
 	}
@@ -291,9 +320,18 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
+		this.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
 		
-		 mAdapter = NfcAdapter.getDefaultAdapter(this);
+		mChildName = getSharedPreferences(APP_PREFS, 0).getString(CHILD_NAME_ENTRY,mChildName);
+		ActionBar bar = getActionBar();
+		bar.setTitle(mChildName);
+		
+		/*int titleId = Resources.getSystem().getIdentifier("action_bar_title", "id", "android");
+		TextView titleView = (TextView)findViewById(titleId);
+		titleView.setText("hello");*/
+				
+		mAdapter = NfcAdapter.getDefaultAdapter(this);
 
         // Create a generic PendingIntent that will be deliver to this activity. The NFC stack
         // will fill in the intent with the details of the discovered tag before delivering to
@@ -338,7 +376,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 				Log.e(TAG, "ERROR: missing ndef messages");
 			}
 		} else {
-			mLetter = 'B';
+			mLetter = 'A';
 			Log.v(TAG, mLetter.toString());
 		}
 		
@@ -380,6 +418,62 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
         if (mAdapter != null) mAdapter.enableForegroundDispatch(this, mPendingIntent, mFilters,
                 mTechLists);
     }
+	
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.activity_main, menu);
+        return true;
+    }
+    
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle item selection
+        switch (item.getItemId()) {
+            case R.id.menu_write:
+            	Log.v(TAG,"Start Write Mode");
+            	View x = (View) findViewById(R.layout.activity_main);
+            	x.setBackgroundColor(Color.RED);
+                return true;
+            case R.id.menu_name:
+                Log.v(TAG,"Setting child's name");
+                AlertDialog.Builder alert = new AlertDialog.Builder(this);
+                alert.setTitle("Child's Name");
+                ///alert.setMessage(String.format("Currently set to %s",mChildName));
+                
+                // Set an EditText view to get user input 
+                final EditText input = new EditText(this);
+                input.setText(mChildName);
+                input.selectAll();
+                alert.setView(input);
+
+                alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int whichButton) {
+                  mChildName= input.getText().toString();
+                  getSharedPreferences(APP_PREFS, 0).edit().putString(CHILD_NAME_ENTRY,mChildName).commit();
+                  ActionBar bar = getActionBar();
+          		  bar.setTitle(mChildName);
+                  }
+                });
+
+                alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+                  public void onClick(DialogInterface dialog, int whichButton) {
+                    // Canceled.
+                  }
+                });
+
+                alert.show();
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+    
+    public void showPopup(View v) {
+        PopupMenu popup = new PopupMenu(this, v);
+        MenuInflater inflater = popup.getMenuInflater();
+        inflater.inflate(R.menu.activity_main, popup.getMenu());
+        popup.show();
+    }
     
 	public Intent buildRecognizeIntent(String word)// , int maxResultsToReturn)
 	{
@@ -404,7 +498,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			for (String match : matches) {
 				if (match.contains(mWord)) {
 					mTts.speak(
-							String.format("Good Job Logan! You said %s", mWord),
+							String.format("Good Job %s! You said %s",mChildName, mWord),
 							TextToSpeech.QUEUE_ADD, null);
 					new RetriveYoutube().executeOnExecutor(
 							AsyncTask.THREAD_POOL_EXECUTOR, mWord);
