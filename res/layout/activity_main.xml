@@ -85,6 +85,9 @@
         android:layout_toRightOf="@+id/wordLetter7"
         android:text="x"
         android:textSize="100dp" />
+    
+    
+      
 
     <ImageView
         android:id="@+id/wordImageView"
@@ -106,6 +109,14 @@
         android:padding="0dp"
         android:text="a"
         android:textSize="250dp" />
+    
+    <FrameLayout
+	    android:id="@+id/cameraPreview"
+        android:layout_height="50dp"
+        android:layout_width="50dp"
+        android:layout_alignParentTop="true"
+	    android:layout_weight="1"
+  	/>
 
     <TextView
         android:id="@+id/bigLetter"

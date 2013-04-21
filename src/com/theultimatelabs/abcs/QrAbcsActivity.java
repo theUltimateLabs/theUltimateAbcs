@@ -17,10 +17,15 @@ import java.io.InputStreamReader;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Random;
+
+import net.sourceforge.zbar.Config;
+import net.sourceforge.zbar.Image;
+import net.sourceforge.zbar.ImageScanner;
+import net.sourceforge.zbar.Symbol;
+import net.sourceforge.zbar.SymbolSet;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -33,133 +38,173 @@ import android.app.PendingIntent;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.IntentFilter.MalformedMimeTypeException;
+import android.content.pm.ActivityInfo;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.hardware.Camera;
+import android.hardware.Camera.AutoFocusCallback;
+import android.hardware.Camera.PreviewCallback;
+import android.hardware.Camera.Size;
 import android.net.Uri;
-import android.nfc.FormatException;
 import android.nfc.NdefMessage;
 import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.nfc.Tag;
-import android.nfc.tech.Ndef;
-import android.nfc.tech.NdefFormatable;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Parcelable;
 import android.speech.RecognizerIntent;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.TextToSpeech.OnInitListener;
-import android.text.Editable;
 import android.util.Log;
 import android.view.Menu;
-import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
-import android.widget.PopupMenu;
 import android.widget.TextView;
 
-import com.theultimatelabs.abcs.R;
+public class QrAbcsActivity extends Activity implements OnInitListener {
 
-public class NfcAbcsActivity extends Activity implements OnInitListener {
-
-	public final static String TAG = NfcAbcsActivity.class.getName();
+	public final static String TAG = QrAbcsActivity.class.getName();
 	protected static final String CHILD_NAME_ENTRY = "CHILD_NAME";
 	protected static final String APP_PREFS = "APP_PREFS";
 	private TextToSpeech mTts;
 	private Character mLetter = null;
 	private String mWord = null;
-	int[] wordLetterIds = { R.id.wordLetter0, R.id.wordLetter1,
-			R.id.wordLetter2, R.id.wordLetter3, R.id.wordLetter4,
-			R.id.wordLetter5, R.id.wordLetter6, R.id.wordLetter7,
-			R.id.wordLetter8 };
+	int[] wordLetterIds = { R.id.wordLetter0, R.id.wordLetter1, R.id.wordLetter2, R.id.wordLetter3, R.id.wordLetter4, R.id.wordLetter5, R.id.wordLetter6,
+			R.id.wordLetter7, R.id.wordLetter8 };
 	private NfcAdapter mAdapter;
 	private PendingIntent mPendingIntent;
 	private IntentFilter[] mFilters;
 	private String[][] mTechLists;
 	private String mChildName = "Logan";
-	
+
+	static {
+		System.loadLibrary("iconv");
+	}
+
+	public void onPause() {
+		super.onPause();
+		releaseCamera();
+	}
+
+	/** A safe way to get an instance of the Camera object. */
+	public static Camera getCameraInstance() {
+		Camera c = null;
+		try {
+			c = Camera.open();
+		} catch (Exception e) {
+		}
+		return c;
+	}
+
+	private void releaseCamera() {
+		if (mCamera != null) {
+			FrameLayout preview = (FrameLayout) findViewById(R.id.cameraPreview);
+			preview.removeView(mPreview);
+			mCamera.setPreviewCallback(null);
+			
+			mCamera.release();
+			mCamera = null;
+		}
+	}
+
+	private void attachCamera() {
+		if (mCamera == null) {
+			mCamera = getCameraInstance();
+			mPreview = new CameraPreview(this, mCamera, previewCb, autoFocusCB);
+			FrameLayout preview = (FrameLayout) findViewById(R.id.cameraPreview);
+			preview.addView(mPreview);
+
+			mCamera.setPreviewCallback(previewCb);
+			mCamera.startPreview();
+			//mCamera.autoFocus(autoFocusCB);
+		}
+	}
+
+	private Runnable doAutoFocus = new Runnable() {
+		public void run() {
+			if (mCamera != null)
+				mCamera.autoFocus(autoFocusCB);
+		}
+	};
+
+	PreviewCallback previewCb = new PreviewCallback() {
+		private String lastTxt = "";
+
+		public void onPreviewFrame(byte[] data, Camera camera) {
+			Camera.Parameters parameters = camera.getParameters();
+			Size size = parameters.getPreviewSize();
+
+			Image barcode = new Image(size.width, size.height, "Y800");
+			barcode.setData(data);
+
+			int result = scanner.scanImage(barcode);
+
+			if (result != 0) {
+				SymbolSet syms = scanner.getResults();
+				for (Symbol sym : syms) {
+					String txt = sym.getData().toUpperCase();
+					if(!txt.equals(lastTxt) && (txt.contains("abc") || txt.contains("ABC"))) {
+						lastTxt = txt;
+						mLetter = new Character(txt.charAt(txt.length()-1));
+						Log.i(TAG,"Got letter: "+mLetter+" from "+txt);
+						Log.v(TAG, mLetter.toString());
+						presentLetter(true);
+					}
+				}
+			}
+		}
+	};
+
+	// Mimic continuous auto-focusing
+	AutoFocusCallback autoFocusCB = new AutoFocusCallback() {
+		public void onAutoFocus(boolean success, Camera camera) {
+			autoFocusHandler.postDelayed(doAutoFocus, 2000);
+		}
+	};
+	private Handler autoFocusHandler;
+	private Camera mCamera;
+	private ImageScanner scanner;
+	private CameraPreview mPreview;
 
 	@Override
 	public void onNewIntent(Intent intent) {
 		Log.v(TAG, "New Intent:" + intent.getAction());
 		if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(intent.getAction())) {
 			Tag tag = (Tag) intent.getExtras().get(NfcAdapter.EXTRA_TAG);
-			Parcelable[] rawMsgs = intent.getParcelableArrayExtra(
-					NfcAdapter.EXTRA_NDEF_MESSAGES);
-			Log.v(TAG,"Decoding TAG");
+			Parcelable[] rawMsgs = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
+			Log.v(TAG, "Decoding TAG");
 			if (rawMsgs != null) {
 				NdefRecord[] records = ((NdefMessage) rawMsgs[0]).getRecords();
 				Log.v(TAG, new String(records[0].getPayload()));
 				if (records != null && records[0].getPayload() != null) {
-					//TODO make sure it has my package name also
+					// TODO make sure it has my package name also
 					mLetter = new Character((char) records[0].getPayload()[0]);
 					Log.v(TAG, mLetter.toString());
-					presentLetter(true);					
+					presentLetter(true);
 				} else {
 					Log.e(TAG, "ERROR: missing record");
 				}
 			} else {
 				Log.e(TAG, "ERROR: missing ndef messages");
 			}
-		}
-		else if (NfcAdapter.ACTION_TECH_DISCOVERED.equals(getIntent().getAction())) {
-			Log.v(TAG,"offer to write tag here");
-			
-		}
-		else {
-			Log.v(TAG,String.format("Unknown TAG type, expecting %s",NfcAdapter.ACTION_NDEF_DISCOVERED));
+		} else if (NfcAdapter.ACTION_TECH_DISCOVERED.equals(getIntent().getAction())) {
+			Log.v(TAG, "offer to write tag here");
+
+		} else {
+			Log.v(TAG, String.format("Unknown TAG type, expecting %s", NfcAdapter.ACTION_NDEF_DISCOVERED));
 		}
 	}
 
-    public void writeTag(Tag tag, String message) {
-    	
-    	Log.v(TAG,"Writing message to card");
-    	NdefMessage ndefMessage = null;
-    	NdefRecord mimeRecord = new NdefRecord(
-    		    NdefRecord.TNF_MIME_MEDIA ,
-    		    "application/com.theultimatelabs.nfcblanket".getBytes(Charset.forName("US-ASCII")),
-    		    new byte[0], message.getBytes(Charset.forName("US-ASCII")));
-		NdefRecord[] records = {mimeRecord};
-		ndefMessage = new NdefMessage(records);		
-    	
-    	Ndef ndef = Ndef.get(tag);
-    	if (ndef != null) {
-    	  try {
-			ndef.connect();
-			ndef.writeNdefMessage(ndefMessage);
-    	  } catch (IOException e) {
-			 // TODO Auto-generated catch block
-    		 e.printStackTrace();
-    	  } catch (FormatException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-    	} else {
-    	  NdefFormatable format = NdefFormatable.get(tag);
-    	  if (format != null) {
-    	    try {
-				format.connect();
-				format.format(ndefMessage);
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-    	  	} catch (FormatException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			
-    	  }           
-    	}
-    }	
-	
 	private String getWord(Character letter) {
 		Resources res = getResources();
 		// TypedArray words = res.obtainTypedArray(R.array.a);
@@ -175,8 +220,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		 * "values", this.getPackageName())));
 		 */
 
-		TypedArray words = res.obtainTypedArray(res.getIdentifier(
-				letter.toString(), "array", this.getPackageName()));
+		TypedArray words = res.obtainTypedArray(res.getIdentifier(letter.toString(), "array", this.getPackageName()));
 		return words.getString(new Random().nextInt(words.length()));
 		/*
 		 * InputStream ins =
@@ -197,7 +241,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			((TextView) findViewById(id)).setText("");
 			((TextView) findViewById(id)).setTextColor(Color.BLACK);
 			((TextView) findViewById(id)).setClickable(false);
-			//((TextView) findViewById(id)).setVisibility(View.INVISIBLE);
+			// ((TextView) findViewById(id)).setVisibility(View.INVISIBLE);
 		}
 	}
 
@@ -208,12 +252,12 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		for (int i = 0; i < word.length(); i++) {
 			TextView letterView = ((TextView) findViewById(wordLetterIds[4 - word.length() / 2 + i]));
 			letterView.setText(word.substring(i, i + 1));
-			//letterView.setVisibility(View.VISIBLE);
+			// letterView.setVisibility(View.VISIBLE);
 			letterView.setOnClickListener(new OnClickListener() {
 				public void onClick(View arg0) {
-					mTts.speak(word,TextToSpeech.QUEUE_FLUSH, null);
+					mTts.speak(word, TextToSpeech.QUEUE_FLUSH, null);
 				}
-				
+
 			});
 		}
 	}
@@ -221,69 +265,70 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 	private void presentLetter(boolean newLetter) {
 
 		Log.v(TAG, "Present letter");
-		
+
 		mWord = getWord(mLetter);
+
+		Log.v(TAG,mWord);
 		
 		((ImageView) findViewById(R.id.wordImageView)).setClickable(false);
+		//new RetriveImage().executeOnExecutor(AsyncTask., mWord);
 		new RetriveImage().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,mWord);
-			if(newLetter) {
-			((TextView) (this.findViewById(R.id.bigLetter))).setText(mLetter
-					.toString().toUpperCase());
-			((TextView) (this.findViewById(R.id.bigLetter)))
-					.setOnClickListener(new OnClickListener() {
-						public void onClick(View arg0) {
-							mTts.speak("big " + mLetter.toString(),
-									TextToSpeech.QUEUE_FLUSH, null);
-						}
-					});
-			((TextView) (this.findViewById(R.id.littleLetter))).setText(mLetter
-					.toString().toLowerCase());
-			((TextView) (this.findViewById(R.id.littleLetter)))
-					.setOnClickListener(new OnClickListener() {
-						public void onClick(View arg0) {
-							mTts.speak("little " + mLetter.toString(),
-									TextToSpeech.QUEUE_FLUSH, null);
-						}
-					});
+		//new RetriveImage().execute(mWord);
+		if (newLetter) {
+			((TextView) (this.findViewById(R.id.bigLetter))).setText(mLetter.toString().toUpperCase());
+			((TextView) (this.findViewById(R.id.bigLetter))).setOnClickListener(new OnClickListener() {
+				public void onClick(View arg0) {
+					mTts.speak("big " + mLetter.toString(), TextToSpeech.QUEUE_FLUSH, null);
+				}
+			});
+			((TextView) (this.findViewById(R.id.littleLetter))).setText(mLetter.toString().toLowerCase());
+			((TextView) (this.findViewById(R.id.littleLetter))).setOnClickListener(new OnClickListener() {
+				public void onClick(View arg0) {
+					mTts.speak("little " + mLetter.toString(), TextToSpeech.QUEUE_FLUSH, null);
+				}
+			});
 			new SayLetter().execute(mLetter);
 		}
 		new SpellWord().execute(mWord);
 	}
-	
+
 	private class SayLetter extends AsyncTask<Character, Integer, Void> {
 
 		@Override
 		protected Void doInBackground(Character... letters) {
 			Character letter = letters[0];
-			
+
 			((TextView) findViewById(R.id.bigLetter)).setTextColor(Color.BLACK);
 			((TextView) findViewById(R.id.littleLetter)).setTextColor(Color.BLACK);
-			
+
 			mTts.playSilence(1000, TextToSpeech.QUEUE_ADD, null);
-			while (mTts.isSpeaking());
-			
-			publishProgress(R.id.bigLetter,0);
+			while (mTts.isSpeaking())
+				;
+
+			publishProgress(R.id.bigLetter, 0);
 			mTts.speak(String.format("Big %c!", letter), TextToSpeech.QUEUE_FLUSH, null);
-			while (mTts.isSpeaking());
-			//publishProgress(R.id.bigLetter,Color.BLACK);
-			
-			publishProgress(R.id.littleLetter,0);
+			while (mTts.isSpeaking())
+				;
+			// publishProgress(R.id.bigLetter,Color.BLACK);
+
+			publishProgress(R.id.littleLetter, 0);
 			mTts.speak(String.format("Little %c!", letter), TextToSpeech.QUEUE_FLUSH, null);
-			while (mTts.isSpeaking());
-			//publishProgress(R.id.littleLetter,Color.BLACK);
-			
-			//publishProgress(R.id.littleLetter,0);
-			//publishProgress(R.id.bigLetter,0);
+			while (mTts.isSpeaking())
+				;
+			// publishProgress(R.id.littleLetter,Color.BLACK);
+
+			// publishProgress(R.id.littleLetter,0);
+			// publishProgress(R.id.bigLetter,0);
 			mTts.speak(String.format("You found the letter %c!", letter), TextToSpeech.QUEUE_FLUSH, null);
-			while (mTts.isSpeaking());
-			//publishProgress(R.id.littleLetter,Color.BLACK);
-			//publishProgress(R.id.bigLetter,Color.BLACK);
-			
+			while (mTts.isSpeaking())
+				;
+			// publishProgress(R.id.littleLetter,Color.BLACK);
+			// publishProgress(R.id.bigLetter,Color.BLACK);
+
 			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
-			mTts.speak(String.format("What starts with %c?", letter),
-					TextToSpeech.QUEUE_ADD, null);
+			mTts.speak(String.format("What starts with %c?", letter), TextToSpeech.QUEUE_ADD, null);
 			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
-			
+
 			return null;
 		}
 
@@ -297,13 +342,13 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		}
 
 		protected void onPostExecute(Void v) {
-			
+
 		}
 
 	}
 
 	private class SpellWord extends AsyncTask<String, Integer, Void> {
-		
+
 		@Override
 		protected void onPreExecute() {
 			showWord(mWord);
@@ -313,24 +358,22 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		protected Void doInBackground(String... words) {
 			String word = words[0];
 			Character c = word.toCharArray()[0];
-			
+
 			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
-			mTts.speak(String.format("%s starts with %c!", word, c),
-					TextToSpeech.QUEUE_ADD, null);
+			mTts.speak(String.format("%s starts with %c!", word, c), TextToSpeech.QUEUE_ADD, null);
 			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
-			mTts.speak(String.format("%s is spelled", word),
-					TextToSpeech.QUEUE_ADD, null);
-		
-			while (mTts.isSpeaking());
+			mTts.speak(String.format("%s is spelled", word), TextToSpeech.QUEUE_ADD, null);
+
+			while (mTts.isSpeaking())
+				;
 			mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
 			for (int i = 0; i < word.length(); i++) {
 				this.publishProgress(i, 0);
-				mTts.speak(word.substring(i, i + 1), TextToSpeech.QUEUE_ADD,
-						null);
+				mTts.speak(word.substring(i, i + 1), TextToSpeech.QUEUE_ADD, null);
 				mTts.playSilence(333, TextToSpeech.QUEUE_ADD, null);
 				while (mTts.isSpeaking())
 					;
-				//publishProgress(i, Color.BLACK);
+				// publishProgress(i, Color.BLACK);
 			}
 			return null;
 		}
@@ -341,14 +384,12 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			if (color == 0) {
 				color = 0xff000000 | new Random().nextInt();
 			}
-			((TextView) findViewById(wordLetterIds[4 - mWord.length() / 2
-					+ index])).setTextColor(color);
+			((TextView) findViewById(wordLetterIds[4 - mWord.length() / 2 + index])).setTextColor(color);
 		}
 
 		protected void onPostExecute(Void v) {
 			new VoiceCapture().execute(mWord);
-			mTts.speak(String.format("%s can you say %s?",mChildName,mWord),
-					TextToSpeech.QUEUE_ADD, null);
+			mTts.speak(String.format("%s can you say %s?", mChildName, mWord), TextToSpeech.QUEUE_ADD, null);
 			((ImageView) findViewById(R.id.wordImageView)).setClickable(true);
 		}
 
@@ -367,76 +408,53 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		}
 	}
 
-
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		this.getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
 		setContentView(R.layout.activity_main);
-		
+
+		setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
 		getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE);
 		
-		//https://help.github.com/articles/dealing-with-non-fast-forward-errors
-//			myView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
 		mChildName = getSharedPreferences(APP_PREFS, 0).getString(CHILD_NAME_ENTRY,mChildName);
 		ActionBar bar = getActionBar();
 		bar.setTitle(mChildName);
 		
-		/*int titleId = Resources.getSystem().getIdentifier("action_bar_title", "id", "android");
-		TextView titleView = (TextView)findViewById(titleId);
-		titleView.setText("hello");*/
-				
-		mAdapter = NfcAdapter.getDefaultAdapter(this);
+		autoFocusHandler = new Handler();
 
-        // Create a generic PendingIntent that will be deliver to this activity. The NFC stack
-        // will fill in the intent with the details of the discovered tag before delivering to
-        // this activity.
-        mPendingIntent = PendingIntent.getActivity(this, 0,
-                new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
+		/* Instance barcode scanner */
+		scanner = new ImageScanner();
+		scanner.setConfig(0, Config.X_DENSITY, 3);
+		scanner.setConfig(0, Config.Y_DENSITY, 3);
 
-        // Setup an intent filter for all MIME based dispatches
-        IntentFilter ndef = new IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED);
-        IntentFilter tech = new IntentFilter(NfcAdapter.ACTION_TECH_DISCOVERED);
-        try {
-            ndef.addDataType("*/*");
-        } catch (MalformedMimeTypeException e) {
-            throw new RuntimeException("fail", e);
-        }
-        
-        mFilters = new IntentFilter[] {
-                ndef,tech
-        };
+		// getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE);
 
-        // Setup a tech list for all NfcF tags
-        mTechLists = new String[][] { new String[] { NdefFormatable.class.getName() } };
+		// https://help.github.com/articles/dealing-with-non-fast-forward-errors
+		// myView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+		mChildName = getSharedPreferences(APP_PREFS, 0).getString(CHILD_NAME_ENTRY, mChildName);
+		// ActionBar bar = getActionBar();
+		// bar.setTitle(mChildName);
 
-        
+		/*
+		 * int titleId = Resources.getSystem().getIdentifier("action_bar_title",
+		 * "id", "android"); TextView titleView =
+		 * (TextView)findViewById(titleId); titleView.setText("hello");
+		 */
+
+		// mAdapter = NfcAdapter.getDefaultAdapter(this);
+
+		// Create a generic PendingIntent that will be deliver to this activity.
+		// The NFC stack
+		// will fill in the intent with the details of the discovered tag before
+		// delivering to
+		// this activity.
+		mPendingIntent = PendingIntent.getActivity(this, 0, new Intent(this, getClass()).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP), 0);
+
 		Log.v(TAG, this.getIntent().getAction());
-		if (NfcAdapter.ACTION_NDEF_DISCOVERED.equals(getIntent().getAction())) {
 
-			Tag tag = (Tag) getIntent().getExtras().get(NfcAdapter.EXTRA_TAG);
-			Parcelable[] rawMsgs = getIntent().getParcelableArrayExtra(
-					NfcAdapter.EXTRA_NDEF_MESSAGES);
-			if (rawMsgs != null) {
-				NdefRecord[] records = ((NdefMessage) rawMsgs[0]).getRecords();
-				Log.v(TAG, new String(records[0].getPayload()));
-				if (records != null && records[0].getPayload() != null) {
-					mLetter = new Character((char) records[0].getPayload()[0]);
-					Log.v(TAG, mLetter.toString());
-					
-				} else {
-					Log.e(TAG, "ERROR: missing record");
-				}
-			} else {
-				Log.e(TAG, "ERROR: missing ndef messages");
-			}
-		} else {
-			mLetter = 'A';
-			Log.v(TAG, mLetter.toString());
-		}
-		
 		mTts = new TextToSpeech(this, this);
-        mTts.setPitch(1.5f);
+		mTts.setPitch(1.5f);
 
 	}
 
@@ -447,8 +465,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			// indicate this.
 			int result = mTts.setLanguage(Locale.US);
 
-			if (result == TextToSpeech.LANG_MISSING_DATA
-					|| result == TextToSpeech.LANG_NOT_SUPPORTED) {
+			if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
 				Log.w(TAG, "Language is not available.");
 				// Lanuage data is missing or the language is not supported,
 				// fallback to US english
@@ -463,83 +480,80 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			Log.e(TAG, "ERROR: Could not initialize TextToSpeech!");
 		}
 
-		if (mLetter != null) presentLetter(true);
+		//if (mLetter != null)
+		//	presentLetter(true);
 
 	}
-  
+
 	@Override
-    public void onResume() {
-        super.onResume();
-        if (mAdapter != null) mAdapter.enableForegroundDispatch(this, mPendingIntent, mFilters,
-                mTechLists);
-    }
-	
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(R.menu.menu, menu);
-        return true;
-    }
-    
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-    	return true;
-        // Handle item selection
-        /*switch (item.getItemId()) {
-            case R.id.menu_write:
-            	Log.v(TAG,"Start Write Mode");
-            	View x = (View) findViewById(R.layout.activity_main);
-            	x.setBackgroundColor(Color.RED);
-                return true;
-            case R.id.menu_name:
-                Log.v(TAG,"Setting child's name");
-                AlertDialog.Builder alert = new AlertDialog.Builder(this);
-                alert.setTitle("Child's Name");
-                ///alert.setMessage(String.format("Currently set to %s",mChildName));
-                
-                // Set an EditText view to get user input 
-                final EditText input = new EditText(this);
-                input.setText(mChildName);
-                input.selectAll();
-                alert.setView(input);
+	public void onResume() {
+		super.onResume();
+		if (mAdapter != null) {
+			mAdapter.enableForegroundDispatch(this, mPendingIntent, mFilters, mTechLists);
+		}
+		attachCamera();
+	}
 
-                alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
-                public void onClick(DialogInterface dialog, int whichButton) {
-                  mChildName= input.getText().toString();
-                  getSharedPreferences(APP_PREFS, 0).edit().putString(CHILD_NAME_ENTRY,mChildName).commit();
-                  ActionBar bar = getActionBar();
-          		  bar.setTitle(mChildName);
-                  }
-                });
+	@Override
+	public boolean onCreateOptionsMenu(Menu menu) {
+		getMenuInflater().inflate(R.menu.menu, menu);
+		return true;
+	}
 
-                alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-                  public void onClick(DialogInterface dialog, int whichButton) {
-                    // Canceled.
-                  }
-                });
+	@Override
+	public boolean onOptionsItemSelected(final MenuItem item) {
+		
+		// Handle item selection
+		/*
+		 * switch (item.getItemId()) { case R.id.menu_write:
+		 * Log.v(TAG,"Start Write Mode"); View x = (View)
+		 * findViewById(R.layout.activity_main);
+		 * x.setBackgroundColor(Color.RED); return true; case R.id.menu_name:
+		 */
+		
+		if(item.getItemId() == R.menu.menu) {}
+		 Log.v(TAG,"Setting child's name"); AlertDialog.Builder alert = new
+		 AlertDialog.Builder(this); alert.setTitle("Child's Name");
+		 ///alert.setMessage(String.format("Currently set to %s",mChildName));
+		 
+		 // Set an EditText view to get user input 
+		 final EditText input = new	 EditText(this); input.setText(mChildName); input.selectAll();
+		 alert.setView(input);
+		  
+		 alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
+		 public void onClick(DialogInterface dialog, int whichButton) {
+		  mChildName= input.getText().toString();
+		  getSharedPreferences(APP_PREFS,
+		  0).edit().putString(CHILD_NAME_ENTRY,mChildName).commit(); ActionBar
+		  bar = getActionBar(); bar.setTitle(mChildName); } });
+		 
+		 alert.setNegativeButton("Cancel", new
+		 DialogInterface.OnClickListener() {
+			public void onClick(DialogInterface dialog, int which) {
+				// TODO Auto-generated method stub
+				
+			}
+		 });
+		 
+		 alert.show();
+		return true;
+		  
+		
+	}
 
-                alert.show();
-                return true;
-            default:
-                return super.onOptionsItemSelected(item);
-        }*/
-    }
-    
-    public void showPopup(View v) {
-        PopupMenu popup = new PopupMenu(this, v);
-        MenuInflater inflater = popup.getMenuInflater();
-        inflater.inflate(R.menu.menu, popup.getMenu());
-        popup.show();
-    }
-    
+	/*
+	 * public void showPopup(View v) { PopupMenu popup = new PopupMenu(this, v);
+	 * MenuInflater inflater = popup.getMenuInflater();
+	 * inflater.inflate(R.menu.activity_main, popup.getMenu()); popup.show(); }
+	 */
+
 	public Intent buildRecognizeIntent(String word)// , int maxResultsToReturn)
 	{
 		Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-		intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-				RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+		intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
 		// intent.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,
 		// maxResultsToReturn);
-		intent.putExtra(RecognizerIntent.EXTRA_PROMPT,
-				String.format("Say %s", word));
+		intent.putExtra(RecognizerIntent.EXTRA_PROMPT, String.format("Say %s", word));
 		intent.putExtra("word", word);
 		return intent;
 	}
@@ -548,26 +562,19 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 		Log.v(TAG, "GOT SPEECH RESULT " + resultCode + " req: " + requestCode);
 
 		if (resultCode == RESULT_OK) {
-			ArrayList<String> matches = data
-					.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+			ArrayList<String> matches = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
 			boolean matchFound = false;
 			for (String match : matches) {
 				if (match.contains(mWord)) {
-					mTts.speak(
-							String.format("Good Job %s! You said %s",mChildName, mWord),
-							TextToSpeech.QUEUE_ADD, null);
-					new RetriveYoutube().executeOnExecutor(
-							AsyncTask.THREAD_POOL_EXECUTOR, mWord);
-					mTts.speak(String.format("Here's a video about %s", mWord),
-							TextToSpeech.QUEUE_ADD, null);
+					mTts.speak(String.format("Good Job %s! You said %s", mChildName, mWord), TextToSpeech.QUEUE_ADD, null);
+					new RetriveYoutube().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, mWord);
+					mTts.speak(String.format("Here's a video about %s", mWord), TextToSpeech.QUEUE_ADD, null);
 					matchFound = true;
 					break;
 				}
 			}
 			if (!matchFound) {
-				mTts.speak(String.format(
-						"I heard you say %s, you were supposed to say %s",
-						matches.get(0), mWord), TextToSpeech.QUEUE_ADD, null);
+				mTts.speak(String.format("I heard you say %s, you were supposed to say %s", matches.get(0), mWord), TextToSpeech.QUEUE_ADD, null);
 				// new
 				// RetriveYoutube().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR,mWord);
 			}
@@ -585,7 +592,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 	class RetriveImage extends AsyncTask<String, Void, Bitmap> {
 
 		final static String TAG = "RetriveImage";
-		
+
 		protected Bitmap doInBackground(String... words) {
 
 			String word = words[0];
@@ -594,10 +601,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 
 			URL url = null;
 			try {
-				url = new URL(
-						String.format(
-								"https://ajax.googleapis.com/ajax/services/search/images?v=1.0&safe=active&imgtype=clipart&q=%s",
-								word));
+				url = new URL(String.format("https://ajax.googleapis.com/ajax/services/search/images?v=1.0&safe=active&imgtype=clipart&q=%s", word));
 
 			} catch (MalformedURLException e2) {
 				// TODO Auto-generated catch block
@@ -616,8 +620,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			StringBuilder builder = new StringBuilder();
 			BufferedReader reader = null;
 			try {
-				reader = new BufferedReader(new InputStreamReader(
-						connection.getInputStream()));
+				reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
 				while ((line = reader.readLine()) != null) {
 					builder.append(line);
 				}
@@ -637,10 +640,8 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			JSONArray results = null;
 			JSONObject result = null;
 			try {
-				results = json.getJSONObject("responseData").getJSONArray(
-						"results");
-				result = results.getJSONObject(new Random().nextInt(Math.min(5,
-						results.length())));
+				results = json.getJSONObject("responseData").getJSONArray("results");
+				result = results.getJSONObject(new Random().nextInt(Math.min(5, results.length())));
 			} catch (JSONException e1) {
 				// TODO Auto-generated catch block
 				e1.printStackTrace();
@@ -650,8 +651,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 
 			try {
 
-				InputStream imageStream = (InputStream) new URL(imageUrl)
-						.getContent();
+				InputStream imageStream = (InputStream) new URL(imageUrl).getContent();
 				if (imageStream != null) {
 					Bitmap bitmap = BitmapFactory.decodeStream(imageStream);
 					return bitmap;
@@ -693,10 +693,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			try {
 				// test:
 				// https://gdata.youtube.com/feeds/api/videos?v=2&q=hot&safeSearch=strict
-				url = new URL(
-						String.format(
-								"https://gdata.youtube.com/feeds/api/videos?v=2&alt=json&safeSearch=strict&category=kids&q=%s",
-								word));
+				url = new URL(String.format("https://gdata.youtube.com/feeds/api/videos?v=2&alt=json&safeSearch=strict&category=kids&q=%s", word));
 			} catch (MalformedURLException e2) {
 				// TODO Auto-generated catch block
 				e2.printStackTrace();
@@ -714,8 +711,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			StringBuilder builder = new StringBuilder();
 			BufferedReader reader = null;
 			try {
-				reader = new BufferedReader(new InputStreamReader(
-						connection.getInputStream()));
+				reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
 				while ((line = reader.readLine()) != null) {
 					builder.append(line);
 				}
@@ -740,8 +736,7 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 
 				JSONArray entries = feed.getJSONArray("entry");
 
-				JSONObject entry = entries.optJSONObject(new Random()
-						.nextInt(Math.min(3, entries.length())));
+				JSONObject entry = entries.optJSONObject(new Random().nextInt(Math.min(3, entries.length())));
 
 				/*
 				 * JSONObject jsonId = entry.getJSONObject("id");
@@ -773,7 +768,5 @@ public class NfcAbcsActivity extends Activity implements OnInitListener {
 			startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(videoUrl)));
 		}
 	}
-	
-
 
 }
